@@ -9,7 +9,6 @@ import Login from './components/Login';
 import Onboarding from './components/Onboarding';
 import Navigation from './components/Navigation';
 import Toast from './components/Toast';
-import { toast } from './lib/toast';
 
 const Dashboard  = lazy(() => import('./components/Dashboard'));
 const FoodScanner = lazy(() => import('./components/FoodScanner'));
@@ -30,21 +29,15 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [tab, setTab] = useState<TabType>('dashboard');
   const [dashKey, setDashKey] = useState(0);
-  const [profileLoading, setProfileLoading] = useState(false);
-
   useEffect(() => {
     return onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        setProfileLoading(true);
         try {
           const p = await db.getProfile(u.uid);
           setProfile(p);
         } catch {
-          toast('Could not load your data. Check your connection.', 'error');
           setProfile(null);
-        } finally {
-          setProfileLoading(false);
         }
       } else {
         setProfile(null);
@@ -66,7 +59,7 @@ export default function App() {
     setTab('dashboard');
   }, []);
 
-  if (user === undefined || profileLoading) {
+  if (user === undefined) {
     return (
       <div className="min-h-screen bg-emerald-500 flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin" />

@@ -1,13 +1,18 @@
 import OpenAI from 'openai';
 import type { AIFoodResult, MacroTargets } from './types';
 
-const apiKey = import.meta.env.VITE_OPENAI_API_KEY as string;
+const apiKey = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+
+function getClient() {
+  if (!apiKey) throw new Error('OpenAI API key not configured (VITE_OPENAI_API_KEY missing)');
+  return new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+}
 
 export async function analyzeFoodImage(
   imageBase64: string,
   mimeType: string
 ): Promise<AIFoodResult> {
-  const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+  const client = getClient();
 
   const response = await client.chat.completions.create({
     model: 'gpt-4o-mini',
@@ -43,7 +48,7 @@ export async function analyzeFoodImage(
 }
 
 export async function analyzeFoodText(description: string): Promise<AIFoodResult> {
-  const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+  const client = getClient();
 
   const response = await client.chat.completions.create({
     model: 'gpt-4o-mini',
@@ -70,7 +75,7 @@ export async function generateInsights(
   weekData: { date: string; calories: number; protein: number; carbs: number; fat: number }[],
   targets: MacroTargets
 ): Promise<string> {
-  const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+  const client = getClient();
 
   const rows = weekData
     .filter(d => d.calories > 0)

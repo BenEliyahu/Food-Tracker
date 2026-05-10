@@ -44,13 +44,39 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
   }, [uid]);
 
   const handleFile = (file: File) => {
-    setImageMime(file.type || 'image/jpeg');
     const reader = new FileReader();
     reader.onload = e => {
       const dataUrl = e.target?.result as string;
-      setImageBase64(dataUrl.split(',')[1]);
-      setResult(null);
-      setError(null);
+      const rawBase64 = dataUrl.split(',')[1];
+      const mime = file.type || 'image/jpeg';
+
+      // Resize to max 1024px and re-encode as JPEG to keep payload under ~500 KB
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1024;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
+          else { width = Math.round(width * MAX / height); height = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL('image/jpeg', 0.82).split(',')[1];
+        setImageBase64(compressed);
+        setImageMime('image/jpeg');
+        setResult(null);
+        setError(null);
+      };
+      img.onerror = () => {
+        // Fallback: use original if canvas fails
+        setImageBase64(rawBase64);
+        setImageMime(mime);
+        setResult(null);
+        setError(null);
+      };
+      img.src = dataUrl;
     };
     reader.readAsDataURL(file);
   };
@@ -75,8 +101,10 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
       } else return;
       setResult(data);
       toast('Analysis complete!');
-    } catch {
-      setError('Analysis failed. Check that your API key is valid and has credits.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Analysis error:', msg);
+      setError(`Analysis failed: ${msg}`);
       toast('Analysis failed', 'error');
     } finally {
       setLoading(false);
