@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where } from 'firebase/firestore';
 import { db } from './firebase';
 import type { UserProfile, MealEntry, WeightEntry, FavoriteMeal } from './types';
 
@@ -20,9 +20,21 @@ export async function getMeals(uid: string): Promise<MealEntry[]> {
   return snap.docs.map(d => d.data() as MealEntry);
 }
 
+// Fetch only last N days — used for streak/recent instead of loading all history
+export async function getMealsRecent(uid: string, days = 60): Promise<MealEntry[]> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+  const q = query(subCol(uid, 'meals'), where('date', '>=', cutoffStr));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data() as MealEntry);
+}
+
+// Server-side filter — was previously fetching ALL meals and filtering client-side
 export async function getMealsByDate(uid: string, date: string): Promise<MealEntry[]> {
-  const meals = await getMeals(uid);
-  return meals.filter(m => m.date === date);
+  const q = query(subCol(uid, 'meals'), where('date', '==', date));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data() as MealEntry);
 }
 
 export async function saveMeal(uid: string, meal: MealEntry): Promise<void> {

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { PieChart, Pie, Cell } from 'recharts';
+import { PieChart, Pie } from 'recharts';
 import type { UserProfile, MealEntry } from '../lib/types';
 import { calculateTargets } from '../lib/calculations';
 import * as db from '../lib/db';
@@ -104,7 +104,7 @@ export default function Dashboard({ uid, profile }: Props) {
     Promise.all([
       db.getMealsByDate(uid, today).then(setMeals),
       db.getWaterByDate(uid, today).then(setWaterState),
-      db.getMeals(uid).then(all => {
+      db.getMealsRecent(uid, 60).then(all => {
         setStreak(calcStreak(all));
         const past = all
           .filter(m => m.date !== today)
@@ -170,9 +170,9 @@ export default function Dashboard({ uid, profile }: Props) {
 
   const macroDonut = consumed.calories > 0
     ? [
-        { name: 'P', value: Math.round(consumed.protein * 4), color: MACRO_COLORS[0] },
-        { name: 'C', value: Math.round(consumed.carbs * 4), color: MACRO_COLORS[1] },
-        { name: 'F', value: Math.round(consumed.fat * 9), color: MACRO_COLORS[2] },
+        { name: 'P', value: Math.round(consumed.protein * 4), fill: MACRO_COLORS[0] },
+        { name: 'C', value: Math.round(consumed.carbs * 4), fill: MACRO_COLORS[1] },
+        { name: 'F', value: Math.round(consumed.fat * 9), fill: MACRO_COLORS[2] },
       ].filter(d => d.value > 0)
     : null;
 
@@ -237,11 +237,7 @@ export default function Dashboard({ uid, profile }: Props) {
                       paddingAngle={2}
                       startAngle={90}
                       endAngle={-270}
-                    >
-                      {macroDonut.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
+                    />
                   </PieChart>
                   <div className="flex gap-1.5 justify-center -mt-1">
                     {[['P', MACRO_COLORS[0]], ['C', MACRO_COLORS[1]], ['F', MACRO_COLORS[2]]].map(([l, c]) => (
