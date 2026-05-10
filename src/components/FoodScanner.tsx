@@ -47,31 +47,34 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
     const reader = new FileReader();
     reader.onload = e => {
       const dataUrl = e.target?.result as string;
-      const rawBase64 = dataUrl.split(',')[1];
       const mime = file.type || 'image/jpeg';
-
-      // Resize to max 1024px and re-encode as JPEG to keep payload under ~500 KB
       const img = new Image();
       img.onload = () => {
-        const MAX = 1024;
-        let { width, height } = img;
-        if (width > MAX || height > MAX) {
-          if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
-          else { width = Math.round(width * MAX / height); height = MAX; }
+        try {
+          const MAX = 1024;
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+            else { width = Math.round(width * MAX / height); height = MAX; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('no ctx');
+          ctx.drawImage(img, 0, 0, width, height);
+          const out = canvas.toDataURL('image/jpeg', 0.8);
+          setImageBase64(out.split(',')[1]);
+          setImageMime('image/jpeg');
+        } catch {
+          setImageBase64(dataUrl.split(',')[1]);
+          setImageMime(mime);
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-        const compressed = canvas.toDataURL('image/jpeg', 0.82).split(',')[1];
-        setImageBase64(compressed);
-        setImageMime('image/jpeg');
         setResult(null);
         setError(null);
       };
       img.onerror = () => {
-        // Fallback: use original if canvas fails
-        setImageBase64(rawBase64);
+        setImageBase64(dataUrl.split(',')[1]);
         setImageMime(mime);
         setResult(null);
         setError(null);

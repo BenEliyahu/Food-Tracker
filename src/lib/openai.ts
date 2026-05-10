@@ -1,101 +1,83 @@
-import OpenAI from 'openai';
 import type { AIFoodResult, MacroTargets } from './types';
 
 const apiKey = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
 
-function getClient() {
+async function chat(messages: object[], maxTokens = 500): Promise<string> {
   if (!apiKey) throw new Error('OpenAI API key not configured (VITE_OPENAI_API_KEY missing)');
-  return new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-}
 
-export async function analyzeFoodImage(
-  imageBase64: string,
-  mimeType: string
-): Promise<AIFoodResult> {
-  const client = getClient();
-
-  const response = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
-    max_tokens: 500,
-    messages: [
-      {
-        role: 'system',
-        content: 'Nutrition analyst. Return ONLY valid JSON, no other text.',
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:${mimeType};base64,${imageBase64}`,
-              detail: 'low',
-            },
-          },
-          {
-            type: 'text',
-            text: 'Identify all food. Return JSON: {"items":[{"name":"string","weight_g":number,"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number}],"total_calories":number,"total_protein_g":number,"total_carbs_g":number,"total_fat_g":number}',
-          },
-        ],
-      },
-    ],
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      max_tokens: maxTokens,
+      messages,
+    }),
   });
 
-  const text = response.choices[0].message.content ?? '';
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error?.message ?? `HTTP ${res.status} ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  return (data.choices[0].message.content as string) ?? '';
+}
+
+function parseJSON(text: string): AIFoodResult {
   const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Invalid AI response');
+  if (!match) throw new Error('AI returned invalid JSON');
   return JSON.parse(match[0]) as AIFoodResult;
+}
+
+const FOOD_SCHEMA =
+  'Return JSON: {"items":[{"name":"string","weight_g":number,"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number}],"total_calories":number,"total_protein_g":number,"total_carbs_g":number,"total_fat_g":number}';
+
+export async function analyzeFoodImage(imageBase64: string, mimeType: string): Promise<AIFoodResult> {
+  const text = await chat([
+    { role: 'system', content: 'Nutrition analyst. Return ONLY valid JSON, no other text.' },
+    {
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'low' } },
+        { type: 'text', text: `Identify all food. ${FOOD_SCHEMA}` },
+      ],
+    },
+  ]);
+  return parseJSON(text);
 }
 
 export async function analyzeFoodText(description: string): Promise<AIFoodResult> {
-  const client = getClient();
-
-  const response = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
-    max_tokens: 500,
-    messages: [
-      {
-        role: 'system',
-        content: 'Nutrition analyst. Return ONLY valid JSON, no other text.',
-      },
-      {
-        role: 'user',
-        content: `Estimate nutrition for: "${description}". Return JSON: {"items":[{"name":"string","weight_g":number,"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number}],"total_calories":number,"total_protein_g":number,"total_carbs_g":number,"total_fat_g":number}`,
-      },
-    ],
-  });
-
-  const text = response.choices[0].message.content ?? '';
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Invalid AI response');
-  return JSON.parse(match[0]) as AIFoodResult;
+  const text = await chat([
+    { role: 'system', content: 'Nutrition analyst. Return ONLY valid JSON, no other text.' },
+    { role: 'user', content: `Estimate nutrition for: "${description}". ${FOOD_SCHEMA}` },
+  ]);
+  return parseJSON(text);
 }
 
 export async function generateInsights(
   weekData: { date: string; calories: number; protein: number; carbs: number; fat: number }[],
   targets: MacroTargets
 ): Promise<string> {
-  const client = getClient();
-
   const rows = weekData
     .filter(d => d.calories > 0)
-    .map(d => `${d.date}: ${d.calories} cal, ${d.protein}g protein, ${d.carbs}g carbs, ${d.fat}g fat`)
+    .map(d => `${d.date}: ${d.calories} cal, ${d.protein}g P, ${d.carbs}g C, ${d.fat}g F`)
     .join('\n');
 
-  const response = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
-    max_tokens: 300,
-    messages: [
+  return chat(
+    [
       {
         role: 'system',
         content: 'You are a friendly nutrition coach. Give 2-3 concise, actionable bullet points. Use plain text, no markdown.',
       },
       {
         role: 'user',
-        content: `Daily targets: ${targets.calories} cal, ${targets.protein}g protein, ${targets.carbs}g carbs, ${targets.fat}g fat.\n\nThis week:\n${rows || 'No data logged.'}\n\nGive 2-3 short motivating insights about patterns and what to improve.`,
+        content: `Targets: ${targets.calories} cal, ${targets.protein}g P, ${targets.carbs}g C, ${targets.fat}g F.\n\nThis week:\n${rows || 'No data.'}\n\nGive 2-3 short motivating insights.`,
       },
     ],
-  });
-
-  return response.choices[0].message.content ?? 'No insights available.';
+    300
+  );
 }
