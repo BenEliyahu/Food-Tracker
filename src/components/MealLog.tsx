@@ -99,6 +99,13 @@ export default function MealLog({ uid }: Props) {
                         deleting === meal.id ? 'opacity-40' : 'opacity-100'
                       }`}
                     >
+                      {meal.imageUrl && (
+                        <img
+                          src={meal.imageUrl}
+                          alt="meal"
+                          className="w-full h-36 object-cover rounded-lg mb-2"
+                        />
+                      )}
                       <div className="flex justify-between items-start gap-2">
                         <div className="flex-1 min-w-0">
                           {meal.items.map((item, i) => (

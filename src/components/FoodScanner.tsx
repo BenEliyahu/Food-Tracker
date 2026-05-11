@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import type { AIFoodResult, MealEntry, FavoriteMeal } from '../lib/types';
+import { useState, useRef } from 'react';
+import type { AIFoodResult, MealEntry } from '../lib/types';
 import { analyzeFoodImage, analyzeFoodText } from '../lib/openai';
 import * as db from '../lib/db';
 import { toast } from '../lib/toast';
@@ -31,17 +31,10 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [selectedMeal, setSelectedMeal] = useState<MealType>('lunch');
   const [showBarcode, setShowBarcode] = useState(false);
-  const [favorites, setFavorites] = useState<FavoriteMeal[]>([]);
-  const [savingFav, setSavingFav] = useState(false);
-  const [addingFavId, setAddingFavId] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    db.getFavorites(uid).then(setFavorites).catch(() => {});
-  }, [uid]);
 
   const handleFile = (file: File) => {
     const reader = new FileReader();
@@ -106,7 +99,6 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
       toast('Analysis complete!');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error('Analysis error:', msg);
       setError(`Analysis failed: ${msg}`);
       toast('Analysis failed', 'error');
     } finally {
@@ -128,9 +120,13 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
         total_protein_g: result.total_protein_g,
         total_carbs_g: result.total_carbs_g,
         total_fat_g: result.total_fat_g,
+        imageUrl: imageBase64 ? `data:image/jpeg;base64,${imageBase64}` : undefined,
         timestamp: Date.now(),
       };
-      await db.saveMeal(uid, meal);
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Save timed out — check your connection')), 10000)
+      );
+      await Promise.race([db.saveMeal(uid, meal), timeout]);
       toast(`Added ${result.total_calories} cal to your log!`);
       setSaving(false);
       setSaveSuccess(true);
@@ -141,66 +137,11 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
         setSaveSuccess(false);
         onMealAdded();
       }, 1200);
-    } catch {
-      toast('Failed to save meal', 'error');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to save meal';
+      toast(msg, 'error');
       setSaving(false);
     }
-  };
-
-  const handleSaveFavorite = async () => {
-    if (!result) return;
-    setSavingFav(true);
-    try {
-      const label = result.items[0]?.name ?? 'Meal';
-      const fav: FavoriteMeal = {
-        id: String(Date.now()),
-        label,
-        items: result.items,
-        total_calories: result.total_calories,
-        total_protein_g: result.total_protein_g,
-        total_carbs_g: result.total_carbs_g,
-        total_fat_g: result.total_fat_g,
-        savedAt: Date.now(),
-      };
-      await db.saveFavorite(uid, fav);
-      setFavorites(prev => [fav, ...prev]);
-      toast('Saved to favorites!');
-    } catch {
-      toast('Failed to save favorite', 'error');
-    } finally {
-      setSavingFav(false);
-    }
-  };
-
-  const handleAddFavorite = async (fav: FavoriteMeal) => {
-    setAddingFavId(fav.id);
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const meal: MealEntry = {
-        id: String(Date.now()),
-        date: today,
-        mealType: selectedMeal,
-        items: fav.items,
-        total_calories: fav.total_calories,
-        total_protein_g: fav.total_protein_g,
-        total_carbs_g: fav.total_carbs_g,
-        total_fat_g: fav.total_fat_g,
-        timestamp: Date.now(),
-      };
-      await db.saveMeal(uid, meal);
-      toast(`Added ${fav.total_calories} cal!`);
-      onMealAdded();
-    } catch {
-      toast('Failed to add', 'error');
-    } finally {
-      setAddingFavId(null);
-    }
-  };
-
-  const handleDeleteFavorite = async (id: string) => {
-    await db.deleteFavorite(uid, id);
-    setFavorites(prev => prev.filter(f => f.id !== id));
-    toast('Removed from favorites');
   };
 
   const reset = () => {
@@ -238,38 +179,6 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
         onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
 
       <div className="mx-4 mt-4 space-y-4">
-
-        {/* Favorites quick-add */}
-        {!result && favorites.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-4">
-            <h3 className="font-semibold text-gray-700 mb-3">⭐ Favorites</h3>
-            <div className="space-y-2">
-              {favorites.map(fav => (
-                <div key={fav.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-gray-50 last:border-0">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-700 truncate">{fav.label}</p>
-                    <p className="text-xs text-gray-400">{fav.total_calories} cal · {fav.total_protein_g}g P · {fav.total_carbs_g}g C · {fav.total_fat_g}g F</p>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => handleAddFavorite(fav)}
-                      disabled={addingFavId === fav.id}
-                      className="bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-600 transition-colors disabled:opacity-60"
-                    >
-                      {addingFavId === fav.id ? '...' : '+ Add'}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteFavorite(fav.id)}
-                      className="text-gray-300 hover:text-red-400 transition-colors text-sm px-1"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Mode toggle */}
         {!result && (
@@ -402,13 +311,6 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
                 : saveSuccess
                   ? '✅ Added!'
                   : '✅ Add to Log'}
-            </button>
-            <button
-              onClick={handleSaveFavorite}
-              disabled={savingFav}
-              className="w-full bg-amber-50 text-amber-600 border border-amber-200 py-2.5 rounded-xl font-semibold mb-2 text-sm disabled:opacity-60 hover:bg-amber-100 transition-colors"
-            >
-              {savingFav ? '...' : '⭐ Save as Favorite'}
             </button>
             <button onClick={reset} className="w-full text-gray-400 text-sm py-2 hover:text-gray-600 transition-colors">
               Start over
