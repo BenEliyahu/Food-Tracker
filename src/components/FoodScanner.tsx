@@ -120,7 +120,7 @@ export default function FoodScanner({ uid, onMealAdded }: Props) {
         total_protein_g: result.total_protein_g,
         total_carbs_g: result.total_carbs_g,
         total_fat_g: result.total_fat_g,
-        imageUrl: imageBase64 ? `data:image/jpeg;base64,${imageBase64}` : undefined,
+        ...(imageBase64 ? { imageUrl: `data:image/jpeg;base64,${imageBase64}` } : {}),
         timestamp: Date.now(),
       };
       const timeout = new Promise<never>((_, reject) =>
